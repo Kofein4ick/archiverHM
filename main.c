@@ -8,7 +8,7 @@
 #include <string.h>
 int packfile(struct dirent* entry,struct stat statbuf,int output,int Meta);
 int pack(char* source, int output,int Meta);
-int sdir(char* dir,int output,int Meta,int depth);
+int sdir(char* dir,int output,int Meta);
 
 int main(int argc, char** argv)
 {
@@ -31,7 +31,10 @@ int main(int argc, char** argv)
 	if((Meta=open("Metadata",O_WRONLY|O_CREAT,S_IRUSR|S_IWUSR))==-1)
 		return -2;
 	if(strcmp(action,"-p")==0){
-		pack(source,output,Meta);
+		if(pack(source,output,Meta)!=0){
+			fprintf(stderr,"Ошибка архивации\n");
+			exit(-2);
+		}
 		printf ("%s успешно запакован в %s\n",source,out);
 	}else{
 		//unpack(source,out);
@@ -45,12 +48,36 @@ int main(int argc, char** argv)
 int pack(char* source, int output,int Meta)
 {
 	printf("IN PACK\n");
-	int i,o,m;
-	int depth=0;
-	sdir(source,output,Meta,depth);
+	DIR* dp;
+	struct dirent* entry;
+	struct stat statbuf;
+	if((dp=opendir("."))==NULL){
+		fprintf(stderr,"Невозможно открыть директорию: %s\n",".");
+		return -1;
+	}
+	while ((entry=readdir(dp))!=NULL){
+		printf("%s\n",entry->d_name);
+		lstat(entry->d_name,&statbuf);
+		if(S_ISDIR(statbuf.st_mode)){
+			if((strcmp(".",entry->d_name)==0 || strcmp("..",entry->d_name)==0))
+				continue;
+			if(strcmp(source,entry->d_name)==0)
+			{
+				printf("In if:%s\n",entry->d_name);
+				if(packfile(entry,statbuf,output,Meta)!=0)
+					return -1;
+				break;
+			}
+		}	
+	}
+	printf("Out while\n");
+	closedir(dp);
+	if(sdir(source,output,Meta)!=0)
+		return -2;
+	return 0;
 }
 
-int sdir(char* dir,int output,int Meta,int depth)
+int sdir(char* dir,int output,int Meta)
 {
 	printf("IN SDIR\n");
 	DIR* dp;
@@ -60,19 +87,22 @@ int sdir(char* dir,int output,int Meta,int depth)
 		fprintf(stderr,"Невозможно открыть директорию: %s\n",dir);
 		return -1;
 	}
+	
 	chdir(dir);
 	while ((entry=readdir(dp))!=NULL){
 		lstat(entry->d_name,&statbuf);
-			if(S_ISDIR(statbuf.st_mode)){
-				if((strcmp(".",entry->d_name)==0 || strcmp("..",entry->d_name)==0))
-					continue;
-					depth++;
-					packfile(entry,statbuf,output,Meta);
-					sdir(entry->d_name,output,Meta,depth);
-				}else
-					packfile(entry,statbuf,output,Meta);
+		printf("%s\n",entry->d_name);
+		if(S_ISDIR(statbuf.st_mode)){
+			if((strcmp(".",entry->d_name)==0 || strcmp("..",entry->d_name)==0))
+				continue;
+				if(packfile(entry,statbuf,output,Meta)!=0)
+					return -1;
+				if(sdir(entry->d_name,output,Meta)!=0)
+					return -2;
+			}else
+				if(packfile(entry,statbuf,output,Meta)!=0)
+					return -1;
 	}
-	depth--;
 	chdir("..");
 	closedir(dp);
 	return 0;
@@ -82,24 +112,29 @@ int packfile(struct dirent* entry,struct stat statbuf,int output,int Meta)
 {
 	printf("IN PACKFILE\n");
 	unsigned char buf[1024];
-	unsigned int md[257];
+	unsigned int md[256];
 	int in;
 	int nread;
-	memset(md,0,257);
+	memset(md,0,256);
 	unsigned int i=0;
 	for(int i=0;i<strlen(entry->d_name);i++)
 		md[i]=(entry->d_name)[i];
+	printf("%s\n",entry->d_name);
 	if(!S_ISDIR(statbuf.st_mode)){
 		if((in=open(entry->d_name,O_RDONLY))==-1)
 			return -1;
 		while ((nread=read(in,buf,sizeof(buf)))>0){
 			if(write(output,buf,nread)!=nread)
-				return -4;
-				md[256]=nread+md[256];
+				return -2;
 		}
 	}
-	else
-		md[256]=0;
-	write(Meta,md,sizeof(md));
+	else{
+		if(write(output,md,sizeof(md))!=sizeof(md))
+			return -3;
+	}
+	if(write(Meta,md,sizeof(md))!=sizeof(md))
+		return -4;
+
+	
 	return 0;
 }
