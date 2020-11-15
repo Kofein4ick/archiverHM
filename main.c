@@ -36,6 +36,7 @@ int main(int argc, char** argv)
 			exit(-2);
 		}
 		printf ("%s успешно запакован в %s\n",source,out);
+		rmdir(source);
 	}else{
 		//unpack(source,out);
 		printf ("%s успешно распакован в %s",source,out);
@@ -99,9 +100,12 @@ int sdir(char* dir,int output,int Meta)
 					return -1;
 				if(sdir(entry->d_name,output,Meta)!=0)
 					return -2;
-			}else
+				rmdir(entry->d_name);
+			}else{
 				if(packfile(entry,statbuf,output,Meta)!=0)
 					return -1;
+				remove(entry->d_name);
+			 }
 	}
 	chdir("..");
 	closedir(dp);
@@ -112,29 +116,35 @@ int packfile(struct dirent* entry,struct stat statbuf,int output,int Meta)
 {
 	printf("IN PACKFILE\n");
 	unsigned char buf[1024];
-	unsigned int md[256];
-	int in;
-	int nread;
-	memset(md,0,256);
+	unsigned int md[2];
+	char outname[256];
+	int nread,in;
+	memset(outname,0,256);
+	memset(md,0,2);
 	unsigned int i=0;
 	for(int i=0;i<strlen(entry->d_name);i++)
-		md[i]=(entry->d_name)[i];
+		outname[i]=(entry->d_name)[i];
 	printf("%s\n",entry->d_name);
 	if(!S_ISDIR(statbuf.st_mode)){
+		if(write(output,outname,sizeof(outname))!=sizeof(outname))
+			return -5;
 		if((in=open(entry->d_name,O_RDONLY))==-1)
 			return -1;
 		while ((nread=read(in,buf,sizeof(buf)))>0){
-			if(write(output,buf,nread)!=nread)
+			if(write(output,buf,nread)!=nread)	
 				return -2;
+				md[0]+=nread;
 		}
+		md[1]=1;
 	}
 	else{
-		if(write(output,md,sizeof(md))!=sizeof(md))
+		md[0]=0;
+		md[1]=2;
+		if(write(output,outname,sizeof(outname))!=sizeof(outname))
 			return -3;
 	}
 	if(write(Meta,md,sizeof(md))!=sizeof(md))
 		return -4;
 
-	
 	return 0;
 }
