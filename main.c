@@ -64,7 +64,6 @@ int main(int argc, char **argv)
 	exit(0);
 }
 
-
 int pack(char *source, int output, int Meta)
 {
 	printf("IN PACK\n");
